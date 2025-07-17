@@ -1,0 +1,33 @@
+# .editorconfig
+# Kök config olduğunu belirt
+root = true
+
+# Tüm C# dosyaları için ayarlar
+[*.cs]
+# UTF-8 kodlama (BOM'suz)
+charset = utf-8
+
+# 4 boşlukluk girinti
+indent_style = space
+indent_size = 4
+
+# Satır sonu biçimi
+end_of_line = crlf
+insert_final_newline = true
+
+# Gereksiz using'leri kaldır
+dotnet_separate_import_directive_groups = true
+dotnet_sort_system_directives_first = true
+
+# using'ler namespace içinde olsun
+csharp_using_directive_placement = inside_namespace:suggestion
+
+# file-scoped namespace kullanımı zorunlu
+csharp_style_namespace_declarations = file_scoped:suggestion
+
+# Kod stilleri (isteğe bağlı ama önerilenler)
+csharp_new_line_before_open_brace = all
+dotnet_style_qualification_for_field = false:suggestion
+dotnet_style_qualification_for_property = false:suggestion
+dotnet_style_qualification_for_method = false:suggestion
+dotnet_style_qualification_for_event = false:suggestion

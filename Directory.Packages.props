@@ -1,0 +1,55 @@
+<Project>
+  <ItemGroup>
+    <!-- Health Checks -->
+    <PackageVersion Include="AspNetCore.HealthChecks.Elasticsearch" Version="9.0.0" />
+    <PackageVersion Include="AspNetCore.HealthChecks.UI" Version="9.0.0" />
+    <PackageVersion Include="AspNetCore.HealthChecks.UI.Client" Version="9.0.0" />
+    <PackageVersion Include="AspNetCore.HealthChecks.UI.InMemory.Storage" Version="9.0.0" />
+    <!-- Elasticsearch & Observability -->
+    <PackageVersion Include="Elastic.Clients.Elasticsearch" Version="8.14.3" />
+    <PackageVersion Include="Microsoft.AspNetCore.Server.Kestrel.Core" Version="2.3.0" />
+    <PackageVersion Include="prometheus-net.AspNetCore" Version="8.2.1" />
+    <!-- Logging -->
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.7" />
+    <!-- Validation -->
+    <PackageVersion Include="FluentValidation" Version="12.0.0" />
+    <PackageVersion Include="FluentValidation.AspNetCore" Version="11.3.1" />
+    <PackageVersion Include="FluentAssertions" Version="8.5.0" />
+    <!-- Caching -->
+    <PackageVersion Include="Microsoft.Extensions.Caching.Abstractions" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="8.0.1" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="9.0.7" />
+    <PackageVersion Include="StackExchange.Redis" Version="2.8.41" />
+    <PackageVersion Include="System.Runtime.Caching" Version="9.0.7" />
+    <!-- Messaging -->
+    <PackageVersion Include="MassTransit" Version="8.5.1" />
+    <PackageVersion Include="MassTransit.RabbitMQ" Version="8.5.1" />
+    <PackageVersion Include="RabbitMQ.Client" Version="7.1.2" />
+    <!-- HTTP & Authentication -->
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.AspNetCore.Http.Abstractions" Version="2.3.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="9.0.6" />
+    <PackageVersion Include="Microsoft.IdentityModel.Tokens" Version="8.0.1" />
+    <!-- Core Libraries -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.11" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.0" />
+    <PackageVersion Include="Polly" Version="8.6.2" />
+    <!-- CQRS & Mapping -->
+    <PackageVersion Include="MediatR" Version="13.0.0" />
+    <PackageVersion Include="AutoMapper" Version="15.0.1" />
+    <!-- Testing -->
+    <PackageVersion Include="AutoFixture" Version="4.18.1" />
+    <PackageVersion Include="Bogus" Version="35.6.3" />
+    <PackageVersion Include="coverlet.collector" Version="6.0.2" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageVersion Include="Moq" Version="4.20.72" />
+    <PackageVersion Include="Snapshooter.Xunit" Version="1.0.1" />
+    <PackageVersion Include="Testcontainers" Version="4.6.0" />
+    <PackageVersion Include="Testcontainers.Elasticsearch" Version="4.6.0" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageVersion>
+  </ItemGroup>
+</Project>
