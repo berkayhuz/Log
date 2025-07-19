@@ -3,17 +3,16 @@ using System;
 using System.Net;
 
 using LogService.Domain.Exceptions;
-using LogService.SharedKernel.Keys;
 
 public static class ExceptionHandler
 {
-    private static readonly Dictionary<Type, (HttpStatusCode, string)> ExceptionMap = new()
+    private static readonly Dictionary<Type, (HttpStatusCode StatusCode, string Message)> ExceptionMap = new()
     {
-        [typeof(ValidationException)] = (HttpStatusCode.BadRequest, LogMessageDefaults.Messages[LogMessageKeys.Exception_ValidationError]),
-        [typeof(ElasticQueryException)] = (HttpStatusCode.InternalServerError,LogMessageDefaults.Messages[LogMessageKeys.Exception_ElasticQueryFailed]),
-        [typeof(AppException)] = (HttpStatusCode.BadRequest,LogMessageDefaults.Messages[LogMessageKeys.Exception_AppError]),
-        [typeof(AuthorizationException)] = (HttpStatusCode.Forbidden,LogMessageDefaults.Messages[LogMessageKeys.Exception_AuthorizationError]),
-        [typeof(NotFoundException)] = (HttpStatusCode.NotFound,LogMessageDefaults.Messages[LogMessageKeys.Exception_NotFound]),
+        [typeof(ValidationException)] = (HttpStatusCode.BadRequest, "Validation error."),
+        [typeof(ElasticQueryException)] = (HttpStatusCode.InternalServerError, "Elastic query failed."),
+        [typeof(AppException)] = (HttpStatusCode.BadRequest, "Application error."),
+        [typeof(AuthorizationException)] = (HttpStatusCode.Forbidden, "Authorization denied."),
+        [typeof(NotFoundException)] = (HttpStatusCode.NotFound, "Resource not found."),
     };
 
     public static ExceptionDetails Handle(Exception ex)
@@ -21,12 +20,20 @@ public static class ExceptionHandler
         if (ExceptionMap.TryGetValue(ex.GetType(), out var value))
         {
             IEnumerable<string> errors = ex is ValidationException vex ? vex.Errors : new[] { ex.Message };
-            return new ExceptionDetails(value.Item1, value.Item2, errors);
+
+            return new ExceptionDetails(
+                value.StatusCode,
+                value.Message,
+                errors,
+                code: null
+            );
         }
+
         return new ExceptionDetails(
             HttpStatusCode.InternalServerError,
-            LogMessageDefaults.Messages[LogMessageKeys.Exception_Unexpected],
-            new[] { ex.Message }
+            "Unexpected server error.",
+            new[] { ex.Message },
+            code: null
         );
     }
 }

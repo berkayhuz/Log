@@ -6,7 +6,7 @@ using LogService.Application.Options;
 using Microsoft.AspNetCore.Mvc;
 
 [ApiController]
-[Route("admin/fallback-processing")]
+[Route("api/fallback-processing")]
 public class FallbackProcessingController : ControllerBase
 {
     private readonly IFallbackProcessingStateService _stateService;

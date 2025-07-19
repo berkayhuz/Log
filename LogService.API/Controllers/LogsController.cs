@@ -4,7 +4,6 @@ namespace LogService.API.Controllers;
 using LogService.API.Filters;
 using LogService.Application.Abstractions.Elastic;
 using LogService.Application.Abstractions.Requests;
-using LogService.Application.Features.Logs.Commands;
 using LogService.Application.Features.Logs.Queries.QueryLogsFlexible;
 
 using MediatR;
@@ -15,26 +14,29 @@ using Microsoft.AspNetCore.Mvc;
 
 [Authorize]
 [ApiController]
-[Route("logs")]
-[RequireMatchingRoleHeader]
-public class LogsController(IMediator mediator, IElasticIndexService indexService) : ControllerBase
+[Route("api/logs/")]
+[ServiceFilter(typeof(RequireMatchingRoleHeaderFilter))]
+public class LogsController(
+    IMediator mediator,
+    IElasticIndexService indexService,
+    ICacheRegionSupport cacheRegionSupport)
+    : ControllerBase
 {
     [Authorize]
     [HttpPost("flexible")]
     public async Task<IActionResult> FlexibleLogQuery([FromBody] QueryLogsFlexible query)
     {
         var result = await mediator.Send(query);
-
-        if (result.IsFailure) return BadRequest(result.Errors);
-
+        if (result.IsFailure)
+            return BadRequest(result.Errors);
         return Ok(result.Value);
     }
-    [HttpDelete("indices/{indexName}")]
+
+    [HttpDelete("{indexName}")]
     [Authorize(Roles = "Admin")]
     public async Task<IActionResult> ClearIndexCache(
-    [FromRoute] string indexName,
-    [FromServices] ICacheRegionSupport cacheRegionSupport,
-    CancellationToken cancellationToken)
+        [FromRoute] string indexName,
+        CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(indexName))
             return BadRequest("Index adı boş olamaz.");

@@ -4,79 +4,59 @@ using System.Text.Json;
 using System.Threading.Tasks;
 
 using LogService.Application.Abstractions.Caching;
-using LogService.Application.Abstractions.Requests;
+using LogService.SharedKernel.Helpers;
 
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Logging;
 
-public class RedisCacheService(IStringDistributedCache cache)
-    : ICacheService, ICacheRegionSupport
+public class RedisCacheService : ICacheService
 {
-    private readonly IStringDistributedCache _cache = cache;
+    private readonly IDistributedCache _cache;
+    private readonly ILogger<RedisCacheService> _logger;
+
+    public RedisCacheService(
+        IDistributedCache cache,
+        ILogger<RedisCacheService> logger)
+    {
+        _cache = cache;
+        _logger = logger;
+    }
 
     public async Task<T?> GetAsync<T>(string key)
     {
-        var cachedData = await _cache.GetStringAsync(key);
+        return await TryCatch.ExecuteAsync<T?>(
+            tryFunc: async () =>
+            {
+                var data = await _cache.GetStringAsync(key);
+                if (string.IsNullOrEmpty(data))
+                    return default;
 
-        if (string.IsNullOrEmpty(cachedData))
-        {
-            return default;
-        }
-
-        return JsonSerializer.Deserialize<T>(cachedData);
+                return JsonSerializer.Deserialize<T>(data);
+            },
+            catchFunc: ex =>
+            {
+                _logger.LogError(ex, "Cache’den okunurken hata: {Key}", key);
+                return Task.FromResult<T?>(default);
+            },
+            logger: _logger,
+            context: $"RedisCacheService.GetAsync<{typeof(T).Name}>({key})"
+        );
     }
 
     public async Task SetAsync<T>(string key, T value, TimeSpan duration)
     {
-        var options = new DistributedCacheEntryOptions
-        {
-            AbsoluteExpirationRelativeToNow = duration
-        };
-
-        var serialized = JsonSerializer.Serialize(value);
-        await _cache.SetStringAsync(key, serialized, options);
-    }
-
-    private string GetRegionKey(string region) => $"cache:region:{region}";
-
-    public async Task AddKeyToRegionAsync(string region, string key)
-    {
-        try
-        {
-            var regionKey = GetRegionKey(region);
-            var json = await _cache.GetStringAsync(regionKey);
-            var keys = string.IsNullOrEmpty(json)
-                ? new HashSet<string>()
-                : JsonSerializer.Deserialize<HashSet<string>>(json) ?? new HashSet<string>();
-
-            keys.Add(key);
-            await _cache.SetStringAsync(regionKey, JsonSerializer.Serialize(keys));
-        }
-        catch (Exception)
-        {
-        }
-    }
-
-    public async Task InvalidateRegionAsync(string region)
-    {
-        try
-        {
-            var regionKey = GetRegionKey(region);
-            var json = await _cache.GetStringAsync(regionKey);
-
-            if (string.IsNullOrEmpty(json)) return;
-
-            var keys = JsonSerializer.Deserialize<HashSet<string>>(json);
-            if (keys == null || !keys.Any()) return;
-
-            foreach (var key in keys)
+        await TryCatch.ExecuteAsync(
+            tryFunc: async () =>
             {
-                await _cache.RemoveAsync(key);
-            }
-
-            await _cache.RemoveAsync(regionKey);
-        }
-        catch (Exception)
-        {
-        }
+                var json = JsonSerializer.Serialize(value);
+                var options = new DistributedCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = duration
+                };
+                await _cache.SetStringAsync(key, json, options);
+            },
+            logger: _logger,
+            context: $"RedisCacheService.SetAsync<{typeof(T).Name}>({key})"
+        );
     }
 }

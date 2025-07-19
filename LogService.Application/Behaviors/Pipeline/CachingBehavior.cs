@@ -1,58 +1,86 @@
 namespace LogService.Application.Behaviors.Pipeline;
+
+using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 using LogService.Application.Abstractions.Caching;
-using LogService.Application.Abstractions.Logging;
 using LogService.Application.Abstractions.Requests;
 using LogService.Application.Common.Results;
-using LogService.SharedKernel.Enums;
-using LogService.SharedKernel.Keys;
+using LogService.SharedKernel.Helpers;
 
 using MediatR;
 
-public class CachingBehavior<TRequest, TResponse>(
-    ICacheService cache,
-    ICacheRegionSupport regionSupport,
-    ILogServiceLogger logLogger)
-    : IPipelineBehavior<TRequest, TResponse>
-    where TRequest : ICachableRequest
-    where TResponse : Result
+using Microsoft.Extensions.Logging;
+
+public class CachingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+        where TRequest : ICachableRequest
+        where TResponse : Result
 {
+    private readonly ICacheService _cache;
+    private readonly ICacheRegionSupport _regionSupport;
+    private readonly ILogger<CachingBehavior<TRequest, TResponse>> _logger;
+
+    public CachingBehavior(
+        ICacheService cache,
+        ICacheRegionSupport regionSupport,
+        ILogger<CachingBehavior<TRequest, TResponse>> logger)
+    {
+        _cache = cache;
+        _regionSupport = regionSupport;
+        _logger = logger;
+    }
+
     public async Task<TResponse> Handle(
         TRequest request,
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        const string className = nameof(CachingBehavior<TRequest, TResponse>);
         var key = request.CacheKey;
         var expiration = request.Expiration;
 
         if (ShouldBypassCache(request, key, expiration))
         {
+            _logger.LogDebug("Cache bypassed for {Request}", typeof(TRequest).Name);
             return await next();
         }
 
-        var cached = await TryGetFromCache(key);
-        if (cached != null)
+        var cached = await TryCatch.ExecuteAsync<TResponse?>(
+            tryFunc: () => _cache.GetAsync<TResponse>(key),
+            catchFunc: ex =>
+            {
+                _logger.LogError(ex, "Error retrieving cache for key {Key}", key);
+                return Task.FromResult<TResponse?>(null);
+            },
+            logger: _logger,
+            context: $"CachingBehavior.Get<{typeof(TRequest).Name}>"
+        );
+
+        if (cached is not null)
         {
+            _logger.LogDebug("Cache hit for {Request} with key {Key}", typeof(TRequest).Name, key);
             return cached;
         }
 
         var response = await next();
 
-        if (!response.IsFailure)
+        if (!response.IsFailure && expiration.HasValue)
         {
-            await cache.SetAsync(key, response, expiration.Value);
+            await TryCatch.ExecuteAsync(
+                tryFunc: async () =>
+                {
+                    await _cache.SetAsync(key, response, expiration.Value);
+                    _logger.LogDebug("Cache set for {Request} with key {Key}", typeof(TRequest).Name, key);
 
-            if (request.CacheRegion is string regionName)
-            {
-                await regionSupport.AddKeyToRegionAsync(regionName, key);
-            }
-
-            await logLogger.LogAsync(LogStage.Debug,
-                LogMessageDefaults.Messages[LogMessageKeys.Cache_SetWithExpiration]
-                    .Replace("{key}", key)
-                    .Replace("{Expiration}", expiration.Value.TotalSeconds.ToString("F0")));
+                    if (!string.IsNullOrWhiteSpace(request.CacheRegion))
+                    {
+                        await _regionSupport.AddKeyToRegionAsync(request.CacheRegion, key);
+                        _logger.LogDebug("Key {Key} added to region {Region}", key, request.CacheRegion);
+                    }
+                },
+                logger: _logger,
+                context: $"CachingBehavior.Set<{typeof(TRequest).Name}>"
+            );
         }
 
         return response;
@@ -60,39 +88,8 @@ public class CachingBehavior<TRequest, TResponse>(
 
     private static bool ShouldBypassCache(TRequest request, string key, TimeSpan? expiration)
     {
-        if (string.IsNullOrWhiteSpace(key) || expiration == null)
-            return true;
-
-        if (request is ICacheBypassableRequest bypassable && bypassable.BypassCache)
-            return true;
-
-        return false;
-    }
-
-    private async Task<TResponse?> TryGetFromCache(string key)
-    {
-        const string className = nameof(CachingBehavior<TRequest, TResponse>);
-        try
-        {
-            var cached = await cache.GetAsync<TResponse>(key);
-            if (cached != null)
-            {
-                await logLogger.LogAsync(LogStage.Debug,
-                    LogMessageDefaults.Messages[LogMessageKeys.Cache_Hit].Replace("{key}", key));
-            }
-            else
-            {
-                await logLogger.LogAsync(LogStage.Debug,
-                    LogMessageDefaults.Messages[LogMessageKeys.Cache_Miss].Replace("{key}", key));
-            }
-
-            return cached;
-        }
-        catch (Exception ex)
-        {
-            await logLogger.LogAsync(LogStage.Warning,
-                LogMessageDefaults.Messages[LogMessageKeys.Cache_RetrievalFailed].Replace("{key}", key), ex);
-            return null;
-        }
+        return string.IsNullOrWhiteSpace(key)
+            || expiration is null
+            || (request is ICacheBypassableRequest bypass && bypass.BypassCache);
     }
 }

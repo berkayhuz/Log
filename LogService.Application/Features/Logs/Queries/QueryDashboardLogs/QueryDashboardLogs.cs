@@ -15,9 +15,9 @@ public class QueryDashboardLogs : IRequest<Result<FlexibleLogQueryResult>>, ICac
     public LogFilterDto Filter { get; set; } = new();
     public FetchOptions Options { get; set; } = new();
 
-    // Artık wildcard yok, data stream adı net: logservice-logs
     public string IndexName { get; set; } = LogConstants.DataStreamName;
 
+    public string UserRole { get; init; }
     public string CacheKey =>
         $"log:dashboard:{IndexName}:{Filter.StartDate:yyyyMMdd}:{Filter.EndDate:yyyyMMdd}:{Filter.Page}:{Filter.PageSize}";
 

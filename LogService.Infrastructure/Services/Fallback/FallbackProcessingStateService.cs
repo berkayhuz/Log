@@ -10,16 +10,12 @@ public class FallbackProcessingStateService : IFallbackProcessingStateService
     {
         get
         {
-            const string className = nameof(FallbackProcessingStateService);
-
             return _current;
         }
     }
 
     public void UpdateOptions(FallbackProcessingRuntimeOptions options)
     {
-        const string className = nameof(FallbackProcessingStateService);
-
         _current.EnableResilient = options.EnableResilient;
         _current.EnableDirect = options.EnableDirect;
         _current.EnableRetry = options.EnableRetry;

@@ -7,12 +7,12 @@ using Elastic.Clients.Elasticsearch;
 
 using FluentValidation;
 
+using LogService.API.Filters;
 using LogService.API.Middlewares;
 using LogService.Application.Abstractions.Caching;
 using LogService.Application.Abstractions.Elastic;
 using LogService.Application.Abstractions.Fallback;
 using LogService.Application.Abstractions.Logging;
-using LogService.Application.Abstractions.Messages;
 using LogService.Application.Abstractions.Requests;
 using LogService.Application.Behaviors.Pipeline;
 using LogService.Application.Common.Results;
@@ -25,7 +25,6 @@ using LogService.Infrastructure.Services.Caching;
 using LogService.Infrastructure.Services.Elastic;
 using LogService.Infrastructure.Services.Fallback;
 using LogService.Infrastructure.Services.Logging;
-using LogService.Infrastructure.Services.Messages;
 using LogService.Infrastructure.Services.Security;
 using LogService.SharedKernel.DTOs;
 
@@ -45,7 +44,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 #region Configuration Bindings
 builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMqSettings"));
-builder.Services.Configure<ExceptionHandlingMiddlewareOptions>(builder.Configuration.GetSection("ExceptionHandlingMiddlewareOptions"));
+
 builder.Services.Configure<RequestLoggingOptions>(builder.Configuration.GetSection("RequestLoggingOptions"));
 #endregion
 
@@ -153,7 +152,6 @@ builder.Services.AddScoped<ILogQueryService, LogQueryService>();
 builder.Services.AddScoped<IElasticLogClient, ElasticLogClient>();
 builder.Services.AddScoped<IResilientLogWriter, ResilientLogWriter>();
 builder.Services.AddScoped<ILogEntryWriteService, LogEntryWriteService>();
-builder.Services.AddScoped<ILogServiceLogger, LogServiceLogger>();
 #endregion
 
 #region Fallback Services
@@ -165,16 +163,22 @@ builder.Services.AddHostedService<FallbackLogReprocessingService>();
 #region Redis Cache Services
 builder.Services.AddSingleton<IStringDistributedCache, StringDistributedCache>();
 builder.Services.AddSingleton<ICacheService, RedisCacheService>();
-builder.Services.AddSingleton<ICacheRegionSupport, RedisCacheService>();
+builder.Services.AddSingleton<ICacheRegionSupport, RedisCacheRegionSupport>();
 
+builder.Services.AddScoped<RequireMatchingRoleHeaderFilter>();
 builder.Services.AddScoped<ICacheService, RedisCacheService>();
-builder.Services.AddScoped<ICacheRegionSupport, RedisCacheService>();
 #endregion
 
-#region Redis Log Message Providers
-builder.Services.AddSingleton<ILogMessageSeeder, RedisLogMessageSeeder>();
-builder.Services.AddSingleton<ILogMessageProvider, RedisLogMessageProvider>();
-#endregion
+builder.Services.Configure<BulkLogOptions>(
+    builder.Configuration.GetSection("BulkLogOptions"));
+
+builder.Services.AddSingleton<BulkLogEntryWriteService>();
+builder.Services.AddSingleton<ILogEntryWriteService>(sp =>
+    sp.GetRequiredService<BulkLogEntryWriteService>());
+builder.Services.AddHostedService(sp =>
+    sp.GetRequiredService<BulkLogEntryWriteService>());
+
+
 
 #region Result Factories
 builder.Services.AddTransient<IResultFactory<LogService.Application.Common.Results.Result>, ResultFactory>();
@@ -220,20 +224,6 @@ builder.Services.Configure<RequestLoggingOptions>(opts =>
 
 
 var app = builder.Build();
-
-#region Seed Redis Log Messages
-try
-{
-    using var scope = app.Services.CreateScope();
-    var seeder = scope.ServiceProvider.GetRequiredService<ILogMessageSeeder>();
-    await seeder.SeedAsync();
-}
-catch (Exception ex)
-{
-    var logger = app.Services.GetRequiredService<ILogger<Program>>();
-    logger.LogError(ex, "Seeder failed.");
-}
-#endregion
 
 #region Development Tools
 if (app.Environment.IsDevelopment())

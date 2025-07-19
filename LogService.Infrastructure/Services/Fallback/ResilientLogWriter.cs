@@ -1,9 +1,5 @@
 namespace LogService.Infrastructure.Services.Fallback;
 
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-
 using LogService.Application.Abstractions.Fallback;
 using LogService.Application.Abstractions.Logging;
 using LogService.Application.Common.Results;
@@ -19,7 +15,9 @@ public class ResilientLogWriter : IResilientLogWriter
     private readonly IFallbackLogWriter _fallbackWriter;
     private readonly AsyncPolicyWrap<Result> _resiliencePolicy;
 
-    public ResilientLogWriter(ILogEntryWriteService innerWriter, IFallbackLogWriter fallbackWriter)
+    public ResilientLogWriter(
+        ILogEntryWriteService innerWriter,
+        IFallbackLogWriter fallbackWriter)
     {
         _innerWriter = innerWriter;
         _fallbackWriter = fallbackWriter;
@@ -29,8 +27,8 @@ public class ResilientLogWriter : IResilientLogWriter
             .OrResult(r => r.IsFailure)
             .WaitAndRetryAsync(
                 retryCount: 3,
-                sleepDurationProvider: attempt => TimeSpan.FromMilliseconds(300 * attempt),
-                onRetryAsync: (_, _, _, _) => Task.CompletedTask);
+                sleepDurationProvider: attempt => TimeSpan.FromMilliseconds(300 * attempt)
+            );
 
         var circuitBreakerPolicy = Policy<Result>
             .Handle<Exception>()
@@ -38,14 +36,16 @@ public class ResilientLogWriter : IResilientLogWriter
             .CircuitBreakerAsync(
                 handledEventsAllowedBeforeBreaking: 5,
                 durationOfBreak: TimeSpan.FromSeconds(30),
-                onBreak: (_, _) => { },
-                onReset: () => { });
+                onBreak: (outcome, timespan) => { },
+                onReset: () => { }
+            );
+
 
         var fallbackPolicy = Policy<Result>
             .Handle<Exception>()
             .OrResult(r => r.IsFailure)
             .FallbackAsync(
-                fallbackAction: _ => Task.FromResult(Result.Failure("Fallback'a düşüldü, dto bilgisi eksik."))
+                fallbackAction: _ => Task.FromResult(Result.Failure("Fallback'a düşüldü."))
             );
 
         _resiliencePolicy = Policy.WrapAsync(fallbackPolicy, retryPolicy, circuitBreakerPolicy);

@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 [ApiController]
-[Route("health")]
+[Route("api/health")]
 public class HealthController : ControllerBase
 {
     private readonly HealthCheckService _healthCheckService;

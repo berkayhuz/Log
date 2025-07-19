@@ -4,16 +4,16 @@ using LogService.SharedKernel.Enums;
 
 public static class RoleLogStageMap
 {
-    private static readonly IReadOnlyDictionary<UserRole, LogStage[]> _rules =
-        new Dictionary<UserRole, LogStage[]>
+    private static readonly IReadOnlyDictionary<UserRole, LogSeverityCode[]> _rules =
+        new Dictionary<UserRole, LogSeverityCode[]>
         {
-            [UserRole.Admin] = (LogStage[])Enum.GetValues(typeof(LogStage)),
-            [UserRole.Developer] = (LogStage[])Enum.GetValues(typeof(LogStage)),
-            [UserRole.Auditor] = new[] { LogStage.Warning, LogStage.Error, LogStage.Fatal },
-            [UserRole.User] = new[] { LogStage.Information, LogStage.Success }
+            [UserRole.Admin] = (LogSeverityCode[])Enum.GetValues(typeof(LogSeverityCode)),
+            [UserRole.Developer] = (LogSeverityCode[])Enum.GetValues(typeof(LogSeverityCode)),
+            [UserRole.Auditor] = new[] { LogSeverityCode.Warning, LogSeverityCode.Error, LogSeverityCode.Fatal },
+            [UserRole.User] = new[] { LogSeverityCode.Information, LogSeverityCode.Success }
         };
 
-    public static IReadOnlyCollection<LogStage> GetAllowedLevels(string role)
+    public static IReadOnlyCollection<LogSeverityCode> GetAllowedLevels(string role)
     {
         if (Enum.TryParse<UserRole>(role, ignoreCase: true, out var userRole)
             && _rules.TryGetValue(userRole, out var levels))
@@ -21,6 +21,6 @@ public static class RoleLogStageMap
             return levels;
         }
 
-        return Array.Empty<LogStage>();
+        return Array.Empty<LogSeverityCode>();
     }
 }

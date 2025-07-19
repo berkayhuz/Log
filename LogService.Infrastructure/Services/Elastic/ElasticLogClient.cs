@@ -2,74 +2,67 @@ namespace LogService.Infrastructure.Services.Elastic;
 
 using global::Elastic.Clients.Elasticsearch;
 using global::Elastic.Clients.Elasticsearch.Core.Search;
-using global::Elastic.Clients.Elasticsearch.Core.TermVectors;
 using global::Elastic.Clients.Elasticsearch.QueryDsl;
-using global::Elastic.Transport;
-using global::Elastic.Transport.Extensions;
 
 using LogService.Application.Abstractions.Elastic;
-using LogService.Application.Abstractions.Logging;
 using LogService.Application.Common.Results;
 using LogService.Application.Features.DTOs;
 using LogService.SharedKernel.DTOs;
 using LogService.SharedKernel.Enums;
+using LogService.SharedKernel.Helpers;
 
-public class ElasticLogClient(ElasticsearchClient client, ILogServiceLogger logLogger) : IElasticLogClient
+using Microsoft.Extensions.Logging;
+
+public class ElasticLogClient : IElasticLogClient
 {
+    private readonly ElasticsearchClient _client;
+    private readonly ILogger<ElasticLogClient> _logger;
+
+    public ElasticLogClient(ElasticsearchClient client, ILogger<ElasticLogClient> logger)
+    {
+        _client = client;
+        _logger = logger;
+    }
+
     public async Task<Result<FlexibleLogQueryResult>> QueryLogsFlexibleAsync(
         string indexName,
         LogFilterDto filter,
-        List<LogStage> allowedLevels,
+        List<LogSeverityCode> allowedLevels,
         bool fetchCount = false,
         bool fetchDocuments = true,
         List<string>? includeFields = null)
     {
-        const string className = nameof(ElasticLogClient);
-
         var request = BuildSearchRequest(indexName, filter, allowedLevels, fetchCount, fetchDocuments, includeFields);
 
-        try
-        {
-            // DEBUG: request json log
-            var requestJson = client.RequestResponseSerializer.SerializeToString(
-                request,
-                formatting: SerializationFormatting.Indented
-            );
-
-            var response = await client.SearchAsync<LogEntryDto>(request);
-
-            if (!response.IsValidResponse)
+        return await TryCatch.ExecuteAsync<Result<FlexibleLogQueryResult>>(
+            tryFunc: async () =>
             {
-                var reason = response.ElasticsearchServerError?.Error?.Reason ?? "Unknown reason";
-                var details = response.ApiCallDetails?.ToString() ?? "No call details";
+                var response = await _client.SearchAsync<LogEntryDto>(request);
 
-                await logLogger.LogAsync(
-                    LogStage.Error,
-                    $"Elastic sorgu hatası (Index: {indexName}): {reason}\nDetails: {details}",
-                    new Exception(reason)
-                );
+                if (!response.IsValidResponse)
+                {
+                    var reason = response.ElasticsearchServerError?.Error?.Reason ?? "Unknown reason";
+                    var details = response.ApiCallDetails?.ToString() ?? "No call details";
 
-                return Result<FlexibleLogQueryResult>.Failure("Elastic sorgusu başarısız", reason);
-            }
+                    return Result<FlexibleLogQueryResult>.Failure("Elastic sorgusu başarısız", reason);
+                }
 
-            var result = new FlexibleLogQueryResult
+                var result = new FlexibleLogQueryResult
+                {
+                    TotalCount = fetchCount ? GetTotalCount(response.HitsMetadata?.Total) : null,
+                    Documents = fetchDocuments ? response.Documents.ToList() : null
+                };
+
+                return Result<FlexibleLogQueryResult>.Success(result);
+            },
+            catchFunc: ex =>
             {
-                TotalCount = fetchCount ? GetTotalCount(response.HitsMetadata?.Total) : null,
-                Documents = fetchDocuments ? response.Documents.ToList() : null
-            };
-
-            return Result<FlexibleLogQueryResult>.Success(result);
-        }
-        catch (Exception ex)
-        {
-            await logLogger.LogAsync(
-                LogStage.Error,
-                $"Elastic sorgu hatası (Exception): {ex.Message}",
-                ex
-            );
-
-            return Result<FlexibleLogQueryResult>.Failure("Elastic sorgusu başarısız", ex.Message);
-        }
+                _logger.LogError(ex, "Elasticsearch sorgusu sırasında beklenmeyen hata oluştu.");
+                return Task.FromResult(Result<FlexibleLogQueryResult>.Failure("Elastic sorgusu başarısız", ex.Message));
+            },
+            logger: _logger,
+            context: "ElasticLogClient.QueryLogsFlexibleAsync"
+        );
     }
 
     private static long? GetTotalCount(Union<TotalHits, long>? total)
@@ -83,13 +76,11 @@ public class ElasticLogClient(ElasticsearchClient client, ILogServiceLogger logL
     private SearchRequest<LogEntryDto> BuildSearchRequest(
         string indexName,
         LogFilterDto filter,
-        List<LogStage> allowedLevels,
+        List<LogSeverityCode> allowedLevels,
         bool fetchCount,
         bool fetchDocuments,
         List<string>? includeFields)
     {
-        const string className = nameof(ElasticLogClient);
-
         int from = (filter.Page - 1) * filter.PageSize;
 
         var request = new SearchRequest<LogEntryDto>(indexName)
@@ -115,13 +106,11 @@ public class ElasticLogClient(ElasticsearchClient client, ILogServiceLogger logL
                 }
             },
             Source = includeFields is { Count: > 0 }
-    ? new SourceConfig(new SourceFilter
-    {
-        Includes = includeFields.ToArray()
-    })
-    : null,
-
-
+                ? new SourceConfig(new SourceFilter
+                {
+                    Includes = includeFields.ToArray()
+                })
+                : null,
             TrackTotalHits = fetchCount ? new TrackHits(true) : null
         };
 

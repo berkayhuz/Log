@@ -4,38 +4,58 @@ using System.Threading.Tasks;
 
 using LogService.Application.Abstractions.Logging;
 using LogService.Infrastructure.HealthCheck.Metadata;
-using LogService.SharedKernel.Constants;
 using LogService.SharedKernel.DTOs;
+using LogService.SharedKernel.Enums;
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 
-[Name("log_query_service_check")]
-[HealthTags("elastic", "log-query", "role", "search", "ready")]
-public class LogQueryServiceHealthCheck(ILogQueryService logQueryService) : IHealthCheck
+[Name("log_query_service")]
+[HealthTags("elastic", "log", "query")]
+public class LogQueryServiceHealthCheck : IHealthCheck
 {
+    private readonly ILogQueryService _logQueryService;
+    private readonly ILogger<LogQueryServiceHealthCheck> _logger;
+
+    public LogQueryServiceHealthCheck(
+        ILogQueryService logQueryService,
+        ILogger<LogQueryServiceHealthCheck> logger)
+    {
+        _logQueryService = logQueryService;
+        _logger = logger;
+    }
+
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        var filter = new LogFilterDto
+        try
         {
-            StartDate = DateTime.UtcNow.AddDays(-1),
-            EndDate = DateTime.UtcNow,
-            Page = 1,
-            PageSize = 1
-        };
+            var result = await _logQueryService.QueryLogsFlexibleAsync(
+                indexName: "logservice-logs",
+                role: UserRole.Admin.ToString(),
+                filter: new LogFilterDto
+                {
+                    StartDate = DateTime.UtcNow.AddDays(-1),
+                    EndDate = DateTime.UtcNow,
+                    Page = 1,
+                    PageSize = 1
+                },
+                fetchCount: true,
+                fetchDocuments: false
+            );
 
-        var result = await logQueryService.QueryLogsFlexibleAsync(
-            indexName: LogConstants.DataStreamName,
-            role: "Admin",
-            filter: filter,
-            fetchCount: true,
-            fetchDocuments: false,
-            includeFields: null
-        );
+            if (result.IsSuccess)
+            {
+                return HealthCheckResult.Healthy("Log sorgulama başarılı.");
+            }
 
-        return result.IsSuccess
-            ? HealthCheckResult.Healthy("Log query service responded successfully.")
-            : HealthCheckResult.Unhealthy($"Log query failed: {string.Join(", ", result.Errors)}");
+            return HealthCheckResult.Degraded("Log sorgulama başarısız.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LogQueryService sağlık kontrolü sırasında hata oluştu.");
+            return HealthCheckResult.Unhealthy("Exception fırladı.", ex);
+        }
     }
 }

@@ -1,64 +1,54 @@
 namespace LogService.Application.Behaviors.Pipeline;
 using System.Diagnostics;
-using System.Security.Claims;
 using System.Threading.Tasks;
 
-using LogService.Application.Abstractions.Logging;
-using LogService.SharedKernel.Enums;
-using LogService.SharedKernel.Keys;
+using LogService.Application.Common.Result;
+using LogService.Application.Common.Results;
+using LogService.SharedKernel.Helpers;
 
 using MediatR;
 
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 public class RequestDiagnosticsBehavior<TRequest, TResponse>(
-    IHttpContextAccessor contextAccessor,
-    ILogServiceLogger logLogger)
+    IHttpContextAccessor httpContextAccessor,
+    ILogger<RequestDiagnosticsBehavior<TRequest, TResponse>> logger)
     : IPipelineBehavior<TRequest, TResponse>
+    where TResponse : IResult
 {
-    private readonly ILogServiceLogger _logLogger = logLogger;
-
     public async Task<TResponse> Handle(
         TRequest request,
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        const string className = nameof(RequestDiagnosticsBehavior<TRequest, TResponse>);
-        var requestName = typeof(TRequest).Name;
-        var httpContext = contextAccessor.HttpContext;
+        var http = httpContextAccessor.HttpContext;
+        var traceId = Activity.Current?.TraceId.ToString()
+                      ?? http?.TraceIdentifier
+                      ?? "no-trace";
 
-        var traceId = Activity.Current?.TraceId.ToString() ?? httpContext?.TraceIdentifier ?? "no-trace";
-        var userId = httpContext?.User.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? "anonymous";
-        var role = httpContext?.User.FindFirst(ClaimTypes.Role)?.Value ?? "unknown";
-        var ip = httpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown";
+        var ip = http?.Connection?.RemoteIpAddress?.ToString() ?? "unknown";
 
-        await _logLogger.LogAsync(
-            LogStage.Debug,
-            LogMessageDefaults.Messages[LogMessageKeys.Trace_Handling]
-                .Replace("{Request}", requestName)
-                .Replace("{TraceId}", traceId)
-                .Replace("{UserId}", userId)
-                .Replace("{Role}", role)
-                .Replace("{IP}", ip));
+        logger.LogInformation(
+            "Handling {Request} | Trace={TraceId} | IP={Ip}",
+            typeof(TRequest).Name, traceId, ip);
 
-        var stopwatch = Stopwatch.StartNew();
-        var response = await next();
-        stopwatch.Stop();
+        var response = await TryCatch.ExecuteAsync<TResponse>(
+            tryFunc: () => next(),
+            catchFunc: ex =>
+            {
+                logger.LogError(ex, "Unhandled exception during {Request}", typeof(TRequest).Name);
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+                return Task.FromException<TResponse>(ex);
+            },
+            logger: logger,
+            context: $"RequestDiagnosticsBehavior<{typeof(TRequest).Name}>"
+        );
 
-        await _logLogger.LogAsync(
-            LogStage.Debug,
-            LogMessageDefaults.Messages[LogMessageKeys.Trace_Handled]
-                .Replace("{Request}", requestName)
-                .Replace("{TraceId}", traceId)
-                .Replace("{Elapsed}", stopwatch.ElapsedMilliseconds.ToString()));
-
-        if (stopwatch.ElapsedMilliseconds > 500)
+        if (response is ITraceableResult tr)
         {
-            await _logLogger.LogAsync(
-                LogStage.Warning,
-                LogMessageDefaults.Messages[LogMessageKeys.Perf_RequestSlow]
-                    .Replace("{Request}", requestName)
-                    .Replace("{Elapsed}", stopwatch.ElapsedMilliseconds.ToString()));
+            tr.TraceId = traceId;
+            tr.IpAddress = ip;
         }
 
         return response;

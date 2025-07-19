@@ -2,17 +2,15 @@ namespace LogService.Application.Behaviors.Pipeline;
 
 using System.Net;
 
-using LogService.Application.Abstractions.Logging;
 using LogService.Application.Common.Exception;
 using LogService.Application.Common.Results;
 using LogService.SharedKernel.Enums;
-using LogService.SharedKernel.Keys;
+using LogService.SharedKernel.Helpers;
 
 using MediatR;
 
 public class ExceptionHandlingBehavior<TRequest, TResponse>(
-    IResultFactory<TResponse> resultFactory,
-    ILogServiceLogger logLogger)
+    IResultFactory<TResponse> resultFactory)
     : IPipelineBehavior<TRequest, TResponse>
     where TRequest : IRequest<TResponse>
 {
@@ -21,35 +19,26 @@ public class ExceptionHandlingBehavior<TRequest, TResponse>(
         RequestHandlerDelegate<TResponse> next,
         CancellationToken cancellationToken)
     {
-        const string className = nameof(ExceptionHandlingBehavior<TRequest, TResponse>);
-        try
-        {
-            return await next();
-        }
-        catch (Exception ex)
-        {
-            var details = ExceptionHandler.Handle(ex);
-
-            var severity = details.StatusCode switch
+        return await TryCatch.ExecuteAsync<TResponse>(
+            tryFunc: () => next(),
+            catchFunc: ex =>
             {
-                HttpStatusCode.BadRequest => LogStage.Warning,
-                HttpStatusCode.InternalServerError => LogStage.Error,
-                HttpStatusCode.Forbidden => LogStage.Warning,
-                HttpStatusCode.NotFound => LogStage.Warning,
-                _ => LogStage.Fatal
-            };
+                var details = ExceptionHandler.Handle(ex);
 
-            await logLogger.LogAsync(
-                severity,
-                LogMessageDefaults.Messages[LogMessageKeys.Exception_UnhandledRequest]
-                    .Replace("{Request}", typeof(TRequest).Name)
-                    .Replace("{Message}", details.Message),
-                ex
-            );
+                var severity = details.StatusCode switch
+                {
+                    HttpStatusCode.BadRequest => LogSeverityCode.Warning,
+                    HttpStatusCode.InternalServerError => LogSeverityCode.Error,
+                    HttpStatusCode.Forbidden => LogSeverityCode.Warning,
+                    HttpStatusCode.NotFound => LogSeverityCode.Warning,
+                    _ => LogSeverityCode.Fatal
+                };
 
-            var failure = resultFactory.CreateFailure(details.Errors ?? new[] { details.Message });
-
-            return failure;
-        }
+                var failure = resultFactory.CreateFailure(details.Errors ?? new[] { details.Message });
+                return Task.FromResult(failure);
+            },
+            logger: null,
+            context: $"ExceptionHandlingBehavior<{typeof(TRequest).Name}>"
+        );
     }
 }

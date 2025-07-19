@@ -1,30 +1,32 @@
 namespace LogService.Infrastructure.Services.Fallback;
 using System;
 using System.Collections.Generic;
-using System.Reflection.Metadata;
 using System.Text.Json;
 using System.Threading.Tasks;
 
 using LogService.Application.Abstractions.Fallback;
 using LogService.Application.Abstractions.Logging;
 using LogService.SharedKernel.DTOs;
+using LogService.SharedKernel.Helpers;
+
+using Microsoft.Extensions.Logging;
 
 public class FallbackLogWriter : IFallbackLogWriter
 {
     private readonly string _directoryPath = Path.Combine(AppContext.BaseDirectory, "App_Data", "FallbackLogs");
     private readonly ILogEntryWriteService _logWriter;
+    private readonly ILogger<FallbackLogWriter> _logger;
 
-    public FallbackLogWriter(ILogEntryWriteService logWriter)
+    public FallbackLogWriter(ILogEntryWriteService logWriter, ILogger<FallbackLogWriter> logger)
     {
-        const string className = nameof(FallbackLogWriter);
         _logWriter = logWriter;
+        _logger = logger;
 
         Directory.CreateDirectory(_directoryPath);
     }
 
     public async Task WriteAsync(LogEntryDto log)
     {
-        const string className = nameof(FallbackLogWriter);
         var filePath = Path.Combine(_directoryPath, $"{Guid.NewGuid()}.json");
         var json = JsonSerializer.Serialize(log, new JsonSerializerOptions { WriteIndented = false });
 
@@ -33,64 +35,80 @@ public class FallbackLogWriter : IFallbackLogWriter
 
     public IEnumerable<string> GetPendingFiles()
     {
-        const string className = nameof(FallbackLogWriter);
-
         return Directory.EnumerateFiles(_directoryPath, "*.json");
     }
 
     public async Task<LogEntryDto?> ReadAsync(string path)
     {
-        const string className = nameof(FallbackLogWriter);
-        try
-        {
-            var json = await File.ReadAllTextAsync(path);
-            var dto = JsonSerializer.Deserialize<LogEntryDto>(json);
-
-            return dto;
-        }
-        catch (Exception ex)
-        {
-            return null;
-        }
+        return await TryCatch.ExecuteAsync(
+            tryFunc: async () =>
+            {
+                var json = await File.ReadAllTextAsync(path);
+                return JsonSerializer.Deserialize<LogEntryDto>(json);
+            },
+            catchFunc: ex =>
+            {
+                _logger.LogWarning(ex, "Fallback dosyası okunamadı: {Path}", path);
+                return Task.FromResult<LogEntryDto?>(null);
+            },
+            logger: _logger,
+            context: $"FallbackLogWriter.ReadAsync({Path.GetFileName(path)})"
+        );
     }
 
     public void Delete(string path)
     {
-        const string className = nameof(FallbackLogWriter);
-        if (File.Exists(path))
+        try
         {
-            File.Delete(path);
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Fallback dosyası silinemedi: {Path}", path);
         }
     }
 
     public async Task RetryPendingAsync(CancellationToken cancellationToken = default)
     {
-        const string className = nameof(FallbackLogWriter);
         var files = Directory.GetFiles(_directoryPath, "*.json");
 
         foreach (var file in files)
         {
-            try
-            {
-                var json = await File.ReadAllTextAsync(file, cancellationToken);
-                var dto = JsonSerializer.Deserialize<LogEntryDto>(json);
-
-                if (dto is null)
+            await TryCatch.ExecuteAsync<bool>(
+                tryFunc: async () =>
                 {
-                    continue;
-                }
+                    var json = await File.ReadAllTextAsync(file, cancellationToken);
+                    var dto = JsonSerializer.Deserialize<LogEntryDto>(json);
 
-                var result = await _logWriter.WriteToElasticAsync(dto);
+                    if (dto is null)
+                    {
+                        _logger.LogWarning("Retry: Geçersiz DTO: {File}", file);
+                        return false;
+                    }
 
-                if (result.IsSuccess)
+                    var result = await _logWriter.WriteToElasticAsync(dto);
+                    if (result.IsSuccess)
+                    {
+                        File.Delete(file);
+                        _logger.LogInformation("Retry başarılı: {File}", file);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Retry başarısız: {File}, Errors: {Errors}", file, string.Join(';', result.Errors));
+                    }
+
+                    return true;
+                },
+                catchFunc: ex =>
                 {
-                    File.Delete(file);
-                }
-            }
-            catch (Exception ex)
-            {
-                return;
-            }
+                    _logger.LogError(ex, "RetryPendingAsync sırasında hata: {File}", file);
+                    return Task.FromResult(false);
+                },
+                logger: _logger,
+                context: $"FallbackLogWriter.RetryPending({Path.GetFileName(file)})"
+            );
         }
     }
 }
+

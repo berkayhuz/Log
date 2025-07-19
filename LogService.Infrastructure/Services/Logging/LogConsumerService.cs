@@ -2,14 +2,13 @@ namespace LogService.Infrastructure.Services.Logging;
 using System.Text;
 using System.Text.Json;
 
-using LogService.Application.Abstractions.Logging;
 using LogService.Application.Options;
 using LogService.Application.Resilience;
 using LogService.SharedKernel.DTOs;
-using LogService.SharedKernel.Enums;
-using LogService.SharedKernel.Keys;
+using LogService.SharedKernel.Helpers;
 
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 using RabbitMQ.Client;
@@ -18,18 +17,15 @@ using RabbitMQ.Client.Events;
 public class LogConsumerService(
     IResilientLogWriter resilientLogWriter,
     IOptions<RabbitMqSettings> rabbitOptions,
-    ILogServiceLogger logLogger) : BackgroundService
+    ILogger<LogConsumerService> logger) : BackgroundService
 {
     private readonly RabbitMqSettings _settings = rabbitOptions.Value;
-    private readonly ILogServiceLogger _logLogger = logLogger;
 
     private IConnection? _connection;
     private IChannel? _channel;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        const string className = nameof(LogConsumerService);
-
         var factory = new ConnectionFactory
         {
             HostName = _settings.Host,
@@ -39,7 +35,6 @@ public class LogConsumerService(
         };
 
         _connection = await factory.CreateConnectionAsync(stoppingToken);
-
         _channel = await _connection.CreateChannelAsync(null, stoppingToken);
 
         await _channel.QueueDeclareAsync(
@@ -55,41 +50,34 @@ public class LogConsumerService(
 
         consumer.ReceivedAsync += async (sender, ea) =>
         {
+            await TryCatch.ExecuteAsync(
+                tryFunc: async () =>
+                {
+                    var json = Encoding.UTF8.GetString(ea.Body.ToArray());
+                    var dto = JsonSerializer.Deserialize<LogEntryDto>(json);
 
-            var json = Encoding.UTF8.GetString(ea.Body.ToArray());
+                    if (dto is null)
+                    {
+                        logger.LogWarning("Deserialized log entry is null. Raw: {Json}", json);
+                        await _channel.BasicAckAsync(ea.DeliveryTag, false);
+                        return;
+                    }
 
-            LogEntryDto? dto;
-            try
-            {
-                dto = JsonSerializer.Deserialize<LogEntryDto>(json);
-            }
-            catch (Exception ex)
-            {
-                await _logLogger.LogAsync(LogStage.Warning, "RabbitMQ'dan gelen mesaj deserialize edilemedi.");
-                await _channel.BasicAckAsync(ea.DeliveryTag, false);
-                return;
-            }
+                    var result = await resilientLogWriter.WriteWithRetryAsync(dto);
 
-            if (dto is null)
-            {
-                await _logLogger.LogAsync(LogStage.Warning, LogMessageDefaults.Messages[LogMessageKeys.Log_InvalidMessage]);
-                await _channel.BasicAckAsync(ea.DeliveryTag, false);
-                return;
-            }
-
-            var result = await resilientLogWriter.WriteWithRetryAsync(dto);
-
-            if (result.IsFailure)
-            {
-                var errorMessage = LogMessageDefaults.Messages[LogMessageKeys.Elastic_WriteErrorList]
-                    .Replace("{Errors}", string.Join(", ", result.Errors));
-
-                await _logLogger.LogAsync(LogStage.Error, errorMessage);
-                await _channel.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: true);
-                return;
-            }
-
-            await _channel.BasicAckAsync(ea.DeliveryTag, false);
+                    if (result.IsFailure)
+                    {
+                        logger.LogWarning("Failed to write log entry. Requeueing. Reason: {Reason}", result.IsFailure);
+                        await _channel.BasicNackAsync(ea.DeliveryTag, false, true);
+                    }
+                    else
+                    {
+                        await _channel.BasicAckAsync(ea.DeliveryTag, false);
+                    }
+                },
+                logger: logger,
+                context: "LogConsumerService.ReceivedAsync"
+            );
         };
 
         await _channel.BasicConsumeAsync(
@@ -102,12 +90,8 @@ public class LogConsumerService(
 
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
-        const string className = nameof(LogConsumerService);
-
         if (_channel != null)
-        {
             await _channel.CloseAsync();
-        }
 
         _connection?.Dispose();
     }

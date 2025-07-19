@@ -11,8 +11,6 @@ public class ClearCacheByRegionCommandHandler(ICacheRegionSupport regionSupport)
 {
     public async Task<Result> Handle(ClearCacheByRegionCommand request, CancellationToken cancellationToken)
     {
-        const string className = nameof(ClearCacheByRegionCommandHandler);
-
         var region = $"region:{request.IndexName}";
 
         await regionSupport.InvalidateRegionAsync(region);

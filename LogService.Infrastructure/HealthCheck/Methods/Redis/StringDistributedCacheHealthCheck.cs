@@ -2,43 +2,54 @@ namespace LogService.Infrastructure.HealthCheck.Methods.Redis;
 using System;
 using System.Threading.Tasks;
 
-using LogService.Application.Abstractions.Caching;
 using LogService.Infrastructure.HealthCheck.Metadata;
 
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 
 [Name("string_distributed_cache")]
-[HealthTags("cache", "redis", "string")]
-public class StringDistributedCacheHealthCheck(IStringDistributedCache cache) : IHealthCheck
+[HealthTags("redis", "cache", "string")]
+public class StringDistributedCacheHealthCheck : IHealthCheck
 {
+    private readonly IDistributedCache _cache;
+    private readonly ILogger<StringDistributedCacheHealthCheck> _logger;
+
+    public StringDistributedCacheHealthCheck(
+        IDistributedCache cache,
+        ILogger<StringDistributedCacheHealthCheck> logger)
+    {
+        _cache = cache;
+        _logger = logger;
+    }
+
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
+        const string key = "healthcheck:string-cache:test";
+        const string value = "ok";
+        var options = new DistributedCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(5)
+        };
+
         try
         {
-            var testKey = $"healthcheck:string:{Guid.NewGuid()}";
-            var testValue = "pong";
-            var options = new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(10)
-            };
+            await _cache.SetStringAsync(key, value, options, cancellationToken);
+            var retrieved = await _cache.GetStringAsync(key, cancellationToken);
 
-            await cache.SetStringAsync(testKey, testValue, options, cancellationToken);
-            var retrieved = await cache.GetStringAsync(testKey, cancellationToken);
-
-            if (retrieved == testValue)
+            if (retrieved != value)
             {
-                return HealthCheckResult.Healthy("StringDistributedCache operational.");
+                return HealthCheckResult.Degraded("Cache string değeri okunamadı.");
             }
 
-            return HealthCheckResult.Unhealthy("Failed to verify string cache read/write.");
+            return HealthCheckResult.Healthy("String cache okuma/yazma başarılı.");
         }
         catch (Exception ex)
         {
-            return HealthCheckResult.Unhealthy("Exception during string cache check.", ex);
+            _logger.LogWarning(ex, "StringDistributedCache health check hatası.");
+            return HealthCheckResult.Unhealthy("String cache servisi erişilemiyor.", ex);
         }
     }
 }

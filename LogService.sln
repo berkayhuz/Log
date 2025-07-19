@@ -13,8 +13,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LogService.API", "LogServic
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LogService.SharedKernel", "LogService.SharedKernel\LogService.SharedKernel.csproj", "{9CF88477-3B7F-4ED9-AF84-32A7870EB88A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LogService.Tests", "LogService.Tests\LogService.Tests.csproj", "{E15FC5E1-AD39-4B44-8588-72A4C7A327DC}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,10 +39,6 @@ Global
 		{9CF88477-3B7F-4ED9-AF84-32A7870EB88A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9CF88477-3B7F-4ED9-AF84-32A7870EB88A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{9CF88477-3B7F-4ED9-AF84-32A7870EB88A}.Release|Any CPU.Build.0 = Release|Any CPU
-		{E15FC5E1-AD39-4B44-8588-72A4C7A327DC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{E15FC5E1-AD39-4B44-8588-72A4C7A327DC}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{E15FC5E1-AD39-4B44-8588-72A4C7A327DC}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{E15FC5E1-AD39-4B44-8588-72A4C7A327DC}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -7,4 +7,3 @@ public class FetchOptions
     public bool FetchDocuments { get; set; } = true;
     public List<string>? IncludeFields { get; set; }
 }
-

@@ -1,131 +1,115 @@
 namespace LogService.Infrastructure.Services.Fallback;
 using System;
 using System.Text.Json;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 
 using LogService.Application.Abstractions.Elastic;
 using LogService.Application.Abstractions.Fallback;
 using LogService.Application.Abstractions.Logging;
+using LogService.Application.Options;
 using LogService.Application.Resilience;
 using LogService.SharedKernel.DTOs;
-using LogService.SharedKernel.Enums;
+using LogService.SharedKernel.Helpers;
 
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
-public class FallbackLogReprocessingService(
-    IFallbackLogWriter fallbackWriter,
-    ILogEntryWriteService directWriter,
-    IResilientLogWriter resilientWriter,
-    IElasticHealthService elasticHealthService,
-    ILogServiceLogger logger,
-    IFallbackProcessingStateService stateService) : BackgroundService
+public class FallbackLogReprocessingService : BackgroundService
 {
-    private readonly string _fallbackFolder = Path.Combine(Directory.GetCurrentDirectory(), "FallbackLogs");
+    private readonly Channel<string> _channel;
+    private readonly IFallbackLogWriter _fallbackWriter;
+    private readonly IElasticHealthService _elasticHealthService;
+    private readonly IResilientLogWriter _resilientWriter;
+    private readonly ILogEntryWriteService _directWriter;
+    private readonly ILogger<FallbackLogReprocessingService> _logger;
+    private readonly IOptionsMonitor<FallbackProcessingRuntimeOptions> _opts;
+    private readonly string _folder;
+    private FileSystemWatcher _watcher;
+
+    public FallbackLogReprocessingService(
+        IFallbackLogWriter fallbackWriter,
+        IElasticHealthService elasticHealthService,
+        IResilientLogWriter resilientWriter,
+        ILogEntryWriteService directWriter,
+        IOptionsMonitor<FallbackProcessingRuntimeOptions> opts,
+        ILogger<FallbackLogReprocessingService> logger)
+    {
+        _fallbackWriter = fallbackWriter;
+        _elasticHealthService = elasticHealthService;
+        _resilientWriter = resilientWriter;
+        _directWriter = directWriter;
+        _opts = opts;
+        _logger = logger;
+
+        _folder = Path.Combine(AppContext.BaseDirectory, "App_Data", "FallbackLogs");
+        Directory.CreateDirectory(_folder);
+
+        _channel = Channel.CreateUnbounded<string>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
+
+        _watcher = new FileSystemWatcher(_folder, "*.json")
+        {
+            EnableRaisingEvents = true,
+            IncludeSubdirectories = false
+        };
+        _watcher.Created += (s, e) => _channel.Writer.TryWrite(e.FullPath);
+    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        const string className = nameof(FallbackLogReprocessingService);
+        foreach (var f in Directory.EnumerateFiles(_folder, "*.json"))
+            await _channel.Writer.WriteAsync(f, stoppingToken);
 
-        while (!stoppingToken.IsCancellationRequested)
+        await foreach (var filePath in _channel.Reader.ReadAllAsync(stoppingToken))
         {
-            var options = stateService.Current;
-            bool elasticUp = await elasticHealthService.IsElasticAvailableAsync(stoppingToken);
-
-            if (!elasticUp)
+            if (!await _elasticHealthService.IsElasticAvailableAsync(stoppingToken))
             {
-                await logger.LogAsync(LogStage.Warning, "ElasticSearch ağı erişilemez durumda. Fallback modları çalıştırılıyor.");
-
-                if (options.EnableResilient)
-                {
-                    await ProcessWithResilientWriter(stoppingToken);
-                }
-
-                if (options.EnableDirect)
-                {
-                    await ProcessWithDirectWriter(stoppingToken);
-                }
-
-                if (options.EnableRetry)
-                {
-                    await fallbackWriter.RetryPendingAsync(stoppingToken);
-                }
-            }
-            else
-            {
-                await logger.LogAsync(LogStage.Information, "ElasticSearch ağı sağlıklı. Fallback işleme durduruldu.");
+                _logger.LogWarning("Elastic down, işlenemedi: {File}", filePath);
+                continue;
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(options.IntervalSeconds), stoppingToken);
+            await TryCatch.ExecuteAsync(
+                tryFunc: async () =>
+                {
+                    var dto = await _fallbackWriter.ReadAsync(filePath);
+                    if (dto is null)
+                    {
+                        _logger.LogWarning("DTO yok/parse edilemedi: {File}", filePath);
+                        _fallbackWriter.Delete(filePath);
+                        return;
+                    }
+
+                    var opt = _opts.CurrentValue;
+                    var result = opt.EnableResilient
+                        ? await _resilientWriter.WriteWithRetryAsync(dto, stoppingToken)
+                        : await _directWriter.WriteToElasticAsync(dto);
+
+                    if (result.IsSuccess)
+                    {
+                        _fallbackWriter.Delete(filePath);
+                        _logger.LogInformation("Fallback işlendi: {File}", filePath);
+                    }
+                    else
+                    {
+                        _logger.LogWarning(
+                            "İşleme başarısız ({Errors}), dosya bırakıldı: {File}",
+                            string.Join(';', result.Errors), filePath);
+                    }
+                },
+                logger: _logger,
+                context: $"Fallback işlem: {Path.GetFileName(filePath)}"
+            );
         }
     }
 
-    private async Task ProcessWithResilientWriter(CancellationToken stoppingToken)
+    public override Task StopAsync(CancellationToken cancellationToken)
     {
-        const string className = nameof(FallbackLogReprocessingService);
-
-        if (!Directory.Exists(_fallbackFolder))
-        {
-            Directory.CreateDirectory(_fallbackFolder);
-        }
-
-        var files = Directory.GetFiles(_fallbackFolder, "*.json");
-
-        foreach (var file in files)
-        {
-            try
-            {
-                var json = await File.ReadAllTextAsync(file, stoppingToken);
-                var dto = JsonSerializer.Deserialize<LogEntryDto>(json);
-
-                if (dto is null)
-                {
-                    continue;
-                }
-
-                var result = await resilientWriter.WriteWithRetryAsync(dto, stoppingToken);
-
-                File.Delete(file);
-            }
-            catch (Exception ex)
-            {
-                await logger.LogAsync(LogStage.Warning, $"[ResilientWrite] Dosya işlenemedi: {ex.Message}");
-            }
-        }
-    }
-
-    private async Task ProcessWithDirectWriter(CancellationToken stoppingToken)
-    {
-        const string className = nameof(FallbackLogReprocessingService);
-
-        var files = fallbackWriter.GetPendingFiles();
-        var count = files.Count();
-
-        foreach (var file in files)
-        {
-            try
-            {
-                var dto = await fallbackWriter.ReadAsync(file);
-
-                if (dto is null)
-                {
-                    continue;
-                }
-
-                var result = await directWriter.WriteToElasticAsync(dto);
-
-                if (result.IsSuccess)
-                {
-                    fallbackWriter.Delete(file);
-                }
-                else
-                {
-                    await logger.LogAsync(LogStage.Warning, $"[DirectWrite] Tekrar yazılamadı: {string.Join(", ", result.Errors)}");
-                }
-            }
-            catch (Exception ex)
-            {
-                await logger.LogAsync(LogStage.Warning, $"[DirectWrite] Hata oluştu: {ex.Message}");
-            }
-        }
+        _watcher.Dispose();
+        return base.StopAsync(cancellationToken);
     }
 }

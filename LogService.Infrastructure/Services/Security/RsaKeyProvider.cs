@@ -19,4 +19,3 @@ public class RsaKeyProvider
         PublicKey = new RsaSecurityKey(rsa);
     }
 }
-

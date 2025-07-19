@@ -4,26 +4,19 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.RegularExpressions;
 
-using LogService.Application.Abstractions.Logging;
 using LogService.Application.Options;
-using LogService.SharedKernel.Enums;
-using LogService.SharedKernel.Keys;
 
 using Microsoft.Extensions.Options;
 
 public class RequestLoggingMiddleware(
     RequestDelegate next,
-    ILogServiceLogger logger,
     IOptions<RequestLoggingOptions> optionsAccessor)
 {
     private readonly RequestDelegate _next = next;
-    private readonly ILogServiceLogger _logger = logger;
     private readonly RequestLoggingOptions _options = optionsAccessor.Value;
 
     public async Task InvokeAsync(HttpContext context)
     {
-        const string className = nameof(RequestLoggingMiddleware);
-
         if (IsExcludedPath(context.Request.Path) || IsExcludedContentType(context.Request.ContentType))
         {
             try
@@ -32,7 +25,6 @@ public class RequestLoggingMiddleware(
             }
             catch (Exception ex)
             {
-                await _logger.LogAsync(LogStage.Error, LogMessageDefaults.Messages[LogMessageKeys.Exception_Unhandled_No_Request], ex);
                 throw;
             }
             return;
@@ -93,11 +85,6 @@ public class RequestLoggingMiddleware(
 
         var statusCode = context.Response.StatusCode;
         var elapsed = stopwatch.ElapsedMilliseconds;
-
-        await _logger.LogAsync(
-            LogStage.Information,
-            $"HTTP {context.Request.Method} {context.Request.Path} responded {statusCode} in {elapsed}ms | Req: {Shrink(requestBody, _options.MaxBodyLength)} | Res: {Shrink(responseBody, _options.MaxBodyLength)}"
-        );
     }
 
     private bool IsExcludedPath(string? path)
@@ -105,13 +92,6 @@ public class RequestLoggingMiddleware(
 
     private bool IsExcludedContentType(string? contentType)
         => _options.ExcludedContentTypes?.Any(t => contentType?.StartsWith(t, StringComparison.OrdinalIgnoreCase) == true) ?? false;
-
-    private static string? Shrink(string? input, int maxLength)
-    {
-        if (string.IsNullOrWhiteSpace(input))
-            return "(empty)";
-        return input!.Length <= maxLength ? input : input[..maxLength] + "...";
-    }
 
     private string MaskSensitiveFields(string? input)
     {

@@ -14,15 +14,13 @@ public class QueryDashboardLogsHandler(ILogQueryService logService)
 {
     public async Task<Result<FlexibleLogQueryResult>> Handle(QueryDashboardLogs request, CancellationToken cancellationToken)
     {
-        const string className = nameof(QueryDashboardLogsHandler);
-
         var indexName = string.IsNullOrWhiteSpace(request.IndexName)
             ? LogConstants.DataStreamName
             : request.IndexName;
 
         var result = await logService.QueryLogsFlexibleAsync(
             indexName: indexName,
-            role: "Admin",
+            role: request.UserRole,
             filter: request.Filter,
             fetchCount: request.Options.FetchCount,
             fetchDocuments: request.Options.FetchDocuments,
