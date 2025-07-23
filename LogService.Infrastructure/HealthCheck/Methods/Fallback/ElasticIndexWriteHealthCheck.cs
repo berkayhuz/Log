@@ -1,11 +1,14 @@
 namespace LogService.Infrastructure.HealthCheck.Methods.Fallback;
+
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 
 using global::Elastic.Clients.Elasticsearch;
 
 using LogService.Infrastructure.HealthCheck.Metadata;
-using LogService.Infrastructure.Services.Fallback;
+using LogService.Infrastructure.Services.Fallback.RetryPolicies;
+using LogService.Infrastructure.Services.Logging.Abstractions;
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
@@ -14,14 +17,14 @@ using Microsoft.Extensions.Logging;
 [HealthTags("elastic", "retry", "fallback", "resilience")]
 public class ElasticIndexWriteHealthCheck : IHealthCheck
 {
-    private readonly ElasticsearchClient _client;
+    private readonly IElasticClientAdapter _elasticAdapter;
     private readonly ILogger<ElasticIndexWriteHealthCheck> _logger;
 
     public ElasticIndexWriteHealthCheck(
-        ElasticsearchClient client,
+        IElasticClientAdapter elasticAdapter,
         ILogger<ElasticIndexWriteHealthCheck> logger)
     {
-        _client = client;
+        _elasticAdapter = elasticAdapter;
         _logger = logger;
     }
 
@@ -47,15 +50,14 @@ public class ElasticIndexWriteHealthCheck : IHealthCheck
             };
 
             var result = await PollyPolicies.RetryElasticPolicy.ExecuteAsync(() =>
-                _client.IndexAsync(request, cancellationToken));
+                _elasticAdapter.IndexAsync(request));
 
             if (result.IsValidResponse)
             {
                 return HealthCheckResult.Healthy("Elastic Polly retry başarılı.");
             }
 
-            _logger.LogWarning("Elastic index yazımı başarısız. Hata: {Error}",
-                result.ElasticsearchServerError?.Error?.Reason);
+            _logger.LogWarning("Elastic index yazımı başarısız. Hata: {Error}", result.ErrorReason);
 
             return HealthCheckResult.Degraded("Polly retry sonrası bile yazılamadı.");
         }

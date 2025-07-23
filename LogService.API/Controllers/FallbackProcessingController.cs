@@ -1,9 +1,12 @@
 namespace LogService.API.Controllers;
 
-using LogService.Application.Abstractions.Fallback;
 using LogService.Application.Options;
+using LogService.Infrastructure.Services.Fallback.Abstractions;
 
 using Microsoft.AspNetCore.Mvc;
+
+using SharedKernel.Common.Results;
+using SharedKernel.Common.Results.Objects;
 
 [ApiController]
 [Route("api/fallback-processing")]
@@ -17,17 +20,26 @@ public class FallbackProcessingController : ControllerBase
     }
 
     [HttpGet]
-    [ProducesResponseType(typeof(FallbackProcessingRuntimeOptions), StatusCodes.Status200OK)]
-    public ActionResult<FallbackProcessingRuntimeOptions> GetOptions()
+    [ProducesResponseType(typeof(Result<FallbackProcessingRuntimeOptions>), StatusCodes.Ok)]
+    public IActionResult GetOptions()
     {
-        return _stateService.Current;
+        var result = Result.Success(_stateService.Current);
+        return result.ToActionResult();
     }
 
     [HttpPost]
-    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(Result), StatusCodes.Ok)]
     public IActionResult UpdateOptions([FromBody] FallbackProcessingRuntimeOptions options)
     {
+        if (options is null)
+        {
+            return Result.Failure("Options payload null olamaz.")
+                .WithStatusCode(StatusCodes.BadRequest)
+                .WithErrorType(ErrorType.Validation)
+                .ToActionResult();
+        }
+
         _stateService.UpdateOptions(options);
-        return Ok();
+        return Result.Success().ToActionResult();
     }
 }

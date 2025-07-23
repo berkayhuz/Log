@@ -1,15 +1,15 @@
 namespace LogService.Infrastructure.HealthCheck.Methods.Logging;
 using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 
-using LogService.Application.Abstractions.Logging;
+using LogService.Domain.DTOs;
 using LogService.Infrastructure.HealthCheck.Metadata;
-using LogService.SharedKernel.DTOs;
-using LogService.SharedKernel.Enums;
+using LogService.Infrastructure.Services.Logging.Abstractions;
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
+
+using SharedKernel.Common.Results.Objects;
 
 [Name("log_write_service")]
 [HealthTags("elastic", "log", "write")]
@@ -35,7 +35,7 @@ public class LogWriteServiceHealthCheck : IHealthCheck
             var dummyLog = new LogEntryDto
             {
                 Message = "HealthCheck::LogWriteService",
-                Level = LogSeverityCode.Debug,
+                Level = ErrorLevel.Debug,
                 TraceId = "healthcheck-trace",
                 IpAddress = "127.0.0.1",
                 Timestamp = DateTime.UtcNow,

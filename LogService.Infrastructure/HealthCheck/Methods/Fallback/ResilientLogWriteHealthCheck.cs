@@ -1,16 +1,15 @@
 namespace LogService.Infrastructure.HealthCheck.Methods.Fallback;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
-using LogService.Application.Abstractions.Fallback;
-using LogService.Application.Resilience;
+using LogService.Domain.DTOs;
 using LogService.Infrastructure.HealthCheck.Metadata;
-using LogService.SharedKernel.DTOs;
-using LogService.SharedKernel.Enums;
+using LogService.Infrastructure.Services.Fallback.Abstractions;
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+
+using SharedKernel.Common.Results.Objects;
 
 [Name("resilient_log_writer")]
 [HealthTags("elastic", "resilience", "fallback", "retry", "circuitbreaker")]
@@ -35,7 +34,7 @@ public class ResilientLogWriteHealthCheck : IHealthCheck
         {
             Timestamp = DateTime.UtcNow,
             Message = "healthcheck_resilient_writer",
-            Level = LogSeverityCode.Information
+            Level = ErrorLevel.Information
         };
 
         var result = await _resilientWriter.WriteWithRetryAsync(log, cancellationToken);

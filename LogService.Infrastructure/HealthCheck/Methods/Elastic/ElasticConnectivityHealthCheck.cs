@@ -1,8 +1,7 @@
 namespace LogService.Infrastructure.HealthCheck.Methods.Elastic;
-using System.Threading.Tasks;
 
-using LogService.Application.Abstractions.Elastic;
 using LogService.Infrastructure.HealthCheck.Metadata;
+using LogService.Infrastructure.Services.Elastic.Abstractions;
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
@@ -26,14 +25,14 @@ public class ElasticConnectivityHealthCheck : IHealthCheck
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        var isAvailable = await _elasticHealthService.IsElasticAvailableAsync(cancellationToken);
+        var result = await _elasticHealthService.IsElasticAvailableAsync(cancellationToken);
 
-        if (isAvailable)
+        if (result.IsSuccess && result.Value)
         {
             return HealthCheckResult.Healthy("Elasticsearch is reachable.");
         }
 
-        _logger.LogWarning("Elasticsearch is not reachable during health check.");
+        _logger.LogWarning("Elasticsearch is not reachable during health check. Reason: {Reason}", string.Join(" | ", result.Errors));
         return HealthCheckResult.Unhealthy("Elasticsearch ping failed.");
     }
 }

@@ -3,12 +3,13 @@ using System;
 using System.Threading.Tasks;
 
 using LogService.Application.Abstractions.Logging;
+using LogService.Domain.DTOs;
 using LogService.Infrastructure.HealthCheck.Metadata;
-using LogService.SharedKernel.DTOs;
-using LogService.SharedKernel.Enums;
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
+
+using SharedKernel.Enums;
 
 [Name("log_query_service")]
 [HealthTags("elastic", "log", "query")]

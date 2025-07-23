@@ -1,25 +1,26 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-	  <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-  </PropertyGroup>
+	<PropertyGroup>
+		<TargetFramework>net9.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+	</PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="AspNetCore.HealthChecks.UI.Client" />
-    <PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" />
-    <PackageReference Include="Microsoft.Extensions.Caching.Abstractions" />
-    <PackageReference Include="Microsoft.IdentityModel.Tokens" />
-	  <PackageReference Include="Elastic.Clients.Elasticsearch" />
-    <PackageReference Include="Polly" />
-    <PackageReference Include="RabbitMQ.Client" />
-    <PackageReference Include="StackExchange.Redis" />
-  </ItemGroup>
+	<ItemGroup>
+		<PackageReference Include="AspNetCore.HealthChecks.UI.Client" />
+		<PackageReference Include="Microsoft.AspNetCore.Http.Abstractions" />
+		<PackageReference Include="Microsoft.Extensions.Caching.Abstractions" />
+		<PackageReference Include="Microsoft.IdentityModel.Tokens" />
+		<PackageReference Include="Elastic.Clients.Elasticsearch" />
+		<PackageReference Include="Polly" />
+		<PackageReference Include="RabbitMQ.Client" />
+		<PackageReference Include="StackExchange.Redis" />
+	</ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\LogService.Application\LogService.Application.csproj" />
-  </ItemGroup>
+	<ItemGroup>
+		<ProjectReference Include="..\..\..\Library\SharedKernel\SharedKernel\SharedKernel.csproj" />
+		<ProjectReference Include="..\LogService.Application\LogService.Application.csproj" />
+	</ItemGroup>
 
 </Project>

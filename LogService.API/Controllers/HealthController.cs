@@ -1,6 +1,6 @@
 namespace LogService.API.Controllers;
 
-using LogService.Application.Abstractions.Elastic;
+using LogService.Infrastructure.Services.Elastic.Abstractions;
 
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -14,9 +14,26 @@ public class HealthController : ControllerBase
     [HttpGet("elastic-status")]
     public async Task<IActionResult> CheckElasticHealth([FromServices] IElasticHealthService elasticHealthService)
     {
-        var isUp = await elasticHealthService.IsElasticAvailableAsync();
-        return Ok(new { ElasticStatus = isUp ? "Up" : "Down" });
+        var result = await elasticHealthService.IsElasticAvailableAsync();
+
+        if (!result.IsSuccess || !result.Value)
+        {
+            return StatusCode(SharedKernel.Common.Results.Objects.StatusCodes.ServiceUnavailable, new
+            {
+                elasticStatus = "Down",
+                errors = result.Errors,
+                exception = result.Exception?.Message,
+                statusCode = result.StatusCode
+            });
+        }
+
+        return Ok(new
+        {
+            elasticStatus = "Up",
+            checkedAt = DateTime.UtcNow.ToString("s")
+        });
     }
+
 
     public HealthController(HealthCheckService healthCheckService)
     {
@@ -29,10 +46,9 @@ public class HealthController : ControllerBase
         return Ok(new
         {
             status = "Live",
-            timestamp = DateTime.UtcNow.ToString("dd-MM-yyyy HH:mm")
+            timestamp = DateTime.UtcNow.ToString("o")
         });
     }
-
 
     [HttpGet("ready")]
     public async Task<IActionResult> Ready(CancellationToken cancellationToken)
@@ -42,14 +58,17 @@ public class HealthController : ControllerBase
         var result = new
         {
             status = report.Status.ToString(),
+            checkedAt = DateTime.UtcNow.ToString("o"),
             checks = report.Entries.Select(e => new
             {
                 name = e.Key,
                 status = e.Value.Status.ToString(),
-                description = e.Value.Description
+                description = e.Value.Description,
+                duration = e.Value.Duration.TotalMilliseconds + "ms"
             })
         };
 
         return StatusCode(report.Status == HealthStatus.Healthy ? 200 : 503, result);
     }
+
 }

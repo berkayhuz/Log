@@ -27,10 +27,10 @@
 	</ItemGroup>
 
 	<ItemGroup>
+		<ProjectReference Include="..\..\..\Library\SharedKernel\SharedKernel\SharedKernel.csproj" />
 		<ProjectReference Include="..\LogService.Application\LogService.Application.csproj" />
 		<ProjectReference Include="..\LogService.Domain\LogService.Domain.csproj" />
 		<ProjectReference Include="..\LogService.Infrastructure\LogService.Infrastructure.csproj" />
-		<ProjectReference Include="..\LogService.SharedKernel\LogService.SharedKernel.csproj" />
 	</ItemGroup>
 
 </Project>

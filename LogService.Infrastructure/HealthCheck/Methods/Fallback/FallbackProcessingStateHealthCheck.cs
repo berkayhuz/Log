@@ -1,8 +1,8 @@
 namespace LogService.Infrastructure.HealthCheck.Methods.Fallback;
 using System.Threading.Tasks;
 
-using LogService.Application.Abstractions.Fallback;
 using LogService.Infrastructure.HealthCheck.Metadata;
+using LogService.Infrastructure.Services.Fallback.Abstractions;
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;

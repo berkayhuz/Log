@@ -7,26 +7,30 @@ using Elastic.Clients.Elasticsearch;
 
 using FluentValidation;
 
-using LogService.API.Filters;
 using LogService.API.Middlewares;
 using LogService.Application.Abstractions.Caching;
-using LogService.Application.Abstractions.Elastic;
-using LogService.Application.Abstractions.Fallback;
 using LogService.Application.Abstractions.Logging;
 using LogService.Application.Abstractions.Requests;
 using LogService.Application.Behaviors.Pipeline;
-using LogService.Application.Common.Results;
 using LogService.Application.Features.Logs.Queries.QueryLogsFlexible;
 using LogService.Application.Options;
-using LogService.Application.Resilience;
+using LogService.Domain.DTOs;
 using LogService.Infrastructure.HealthCheck.Extension;
 using LogService.Infrastructure.HealthCheck.Metadata;
-using LogService.Infrastructure.Services.Caching;
-using LogService.Infrastructure.Services.Elastic;
-using LogService.Infrastructure.Services.Fallback;
-using LogService.Infrastructure.Services.Logging;
+using LogService.Infrastructure.Services.Caching.Abstractions;
+using LogService.Infrastructure.Services.Caching.Extensions;
+using LogService.Infrastructure.Services.Caching.Redis;
+using LogService.Infrastructure.Services.Elastic.Abstractions;
+using LogService.Infrastructure.Services.Elastic.Clients;
+using LogService.Infrastructure.Services.Elastic.Health;
+using LogService.Infrastructure.Services.Elastic.Indexing;
+using LogService.Infrastructure.Services.Fallback.Abstractions;
+using LogService.Infrastructure.Services.Fallback.Reprocessing;
+using LogService.Infrastructure.Services.Fallback.Writers;
+using LogService.Infrastructure.Services.Logging.Abstractions;
+using LogService.Infrastructure.Services.Logging.Read;
+using LogService.Infrastructure.Services.Logging.Write;
 using LogService.Infrastructure.Services.Security;
-using LogService.SharedKernel.DTOs;
 
 using MediatR;
 
@@ -37,10 +41,16 @@ using Microsoft.IdentityModel.Tokens;
 
 using Prometheus;
 
+using SharedKernel.Behaviors.Pipeline;
+using SharedKernel.Filters;
+using SharedKernel.Options;
+
 using StackExchange.Redis;
 #endregion
 
 var builder = WebApplication.CreateBuilder(args);
+var uri = builder.Configuration["Elasticsearch:Uri"];
+var redisConnString = builder.Configuration.GetConnectionString("Redis");
 
 #region Configuration Bindings
 builder.Services.Configure<RabbitMqSettings>(builder.Configuration.GetSection("RabbitMqSettings"));
@@ -54,8 +64,6 @@ builder.Services.AddStackExchangeRedisCache(options =>
     options.Configuration = builder.Configuration.GetConnectionString("Redis");
 });
 
-var redisConnString = builder.Configuration.GetConnectionString("Redis");
-
 builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
     ConnectionMultiplexer.Connect(redisConnString));
 #endregion
@@ -63,14 +71,14 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 #region Elasticsearch Configuration
 builder.Services.AddHttpClient<IElasticIndexService, ElasticIndexService>(client =>
 {
-    client.BaseAddress = new Uri("http://elasticsearch:9200");
+    client.BaseAddress = new Uri(uri);
     client.DefaultRequestHeaders.Accept.Clear();
     client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 });
 
 builder.Services.AddSingleton<ElasticsearchClient>(_ =>
 {
-    var settings = new ElasticsearchClientSettings(new Uri("http://elasticsearch:9200"))
+    var settings = new ElasticsearchClientSettings(new Uri(uri))
         .DefaultIndex("logservice-logs")
         .DefaultMappingFor<LogEntryDto>(m => m
             .IndexName("logservice-logs")
@@ -166,7 +174,6 @@ builder.Services.AddSingleton<ICacheService, RedisCacheService>();
 builder.Services.AddSingleton<ICacheRegionSupport, RedisCacheRegionSupport>();
 
 builder.Services.AddScoped<RequireMatchingRoleHeaderFilter>();
-builder.Services.AddScoped<ICacheService, RedisCacheService>();
 #endregion
 
 builder.Services.Configure<BulkLogOptions>(
@@ -177,13 +184,6 @@ builder.Services.AddSingleton<ILogEntryWriteService>(sp =>
     sp.GetRequiredService<BulkLogEntryWriteService>());
 builder.Services.AddHostedService(sp =>
     sp.GetRequiredService<BulkLogEntryWriteService>());
-
-
-
-#region Result Factories
-builder.Services.AddTransient<IResultFactory<LogService.Application.Common.Results.Result>, ResultFactory>();
-builder.Services.AddTransient(typeof(IResultFactory<>), typeof(ResultFactory<>));
-#endregion
 
 #region HealthChecks
 builder.Services.AddHealthChecksUI(setup =>
@@ -236,6 +236,14 @@ if (app.Environment.IsDevelopment())
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseRouting();
 app.UseHttpMetrics();
+
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Add("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Add("X-Frame-Options", "DENY");
+    context.Response.Headers.Add("X-XSS-Protection", "1; mode=block");
+    await next();
+});
 
 app.UseAuthentication();
 app.UseAuthorization();

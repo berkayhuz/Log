@@ -1,21 +1,17 @@
 namespace LogService.Application.Behaviors.Pipeline;
 
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-
 using LogService.Application.Abstractions.Caching;
 using LogService.Application.Abstractions.Requests;
-using LogService.Application.Common.Results;
-using LogService.SharedKernel.Helpers;
 
 using MediatR;
 
 using Microsoft.Extensions.Logging;
 
+using SharedKernel.Common.Results;
+
 public class CachingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
-        where TRequest : ICachableRequest
-        where TResponse : Result
+    where TRequest : ICachableRequest
+    where TResponse : Result
 {
     private readonly ICacheService _cache;
     private readonly ICacheRegionSupport _regionSupport;
@@ -41,24 +37,24 @@ public class CachingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, 
 
         if (ShouldBypassCache(request, key, expiration))
         {
-            _logger.LogDebug("Cache bypassed for {Request}", typeof(TRequest).Name);
+            _logger.LogDebug("🟡 Cache bypassed for {Request}", typeof(TRequest).Name);
             return await next();
         }
 
-        var cached = await TryCatch.ExecuteAsync<TResponse?>(
-            tryFunc: () => _cache.GetAsync<TResponse>(key),
-            catchFunc: ex =>
-            {
-                _logger.LogError(ex, "Error retrieving cache for key {Key}", key);
-                return Task.FromResult<TResponse?>(null);
-            },
-            logger: _logger,
-            context: $"CachingBehavior.Get<{typeof(TRequest).Name}>"
-        );
+        TResponse? cached = null;
+
+        try
+        {
+            cached = await _cache.GetAsync<TResponse>(key);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Error retrieving cache for key {Key}", key);
+        }
 
         if (cached is not null)
         {
-            _logger.LogDebug("Cache hit for {Request} with key {Key}", typeof(TRequest).Name, key);
+            _logger.LogDebug("✅ Cache hit for {Request} with key {Key}", typeof(TRequest).Name, key);
             return cached;
         }
 
@@ -66,21 +62,21 @@ public class CachingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, 
 
         if (!response.IsFailure && expiration.HasValue)
         {
-            await TryCatch.ExecuteAsync(
-                tryFunc: async () =>
-                {
-                    await _cache.SetAsync(key, response, expiration.Value);
-                    _logger.LogDebug("Cache set for {Request} with key {Key}", typeof(TRequest).Name, key);
+            try
+            {
+                await _cache.SetAsync(key, response, expiration.Value);
+                _logger.LogDebug("📦 Cache set for {Request} with key {Key}", typeof(TRequest).Name, key);
 
-                    if (!string.IsNullOrWhiteSpace(request.CacheRegion))
-                    {
-                        await _regionSupport.AddKeyToRegionAsync(request.CacheRegion, key);
-                        _logger.LogDebug("Key {Key} added to region {Region}", key, request.CacheRegion);
-                    }
-                },
-                logger: _logger,
-                context: $"CachingBehavior.Set<{typeof(TRequest).Name}>"
-            );
+                if (!string.IsNullOrWhiteSpace(request.CacheRegion))
+                {
+                    await _regionSupport.AddKeyToRegionAsync(request.CacheRegion, key);
+                    _logger.LogDebug("🔗 Key {Key} added to region {Region}", key, request.CacheRegion);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "❌ Error setting cache for key {Key}", key);
+            }
         }
 
         return response;

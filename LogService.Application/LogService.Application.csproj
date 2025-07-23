@@ -6,7 +6,7 @@
 		<Nullable>enable</Nullable>
 		<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
 	</PropertyGroup>
-	
+
 	<ItemGroup>
 		<PackageReference Include="AutoMapper" />
 		<PackageReference Include="FluentValidation" />
@@ -20,6 +20,7 @@
 
 	<ItemGroup>
 		<ProjectReference Include="..\LogService.Domain\LogService.Domain.csproj" />
+		<ProjectReference Include="..\..\..\Library\SharedKernel\SharedKernel\SharedKernel.csproj" />
 	</ItemGroup>
 
 </Project>

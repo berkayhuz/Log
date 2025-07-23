@@ -1,8 +1,8 @@
 namespace LogService.Infrastructure.HealthCheck.Methods.Elastic;
 using System.Threading.Tasks;
 
-using LogService.Application.Abstractions.Elastic;
 using LogService.Infrastructure.HealthCheck.Metadata;
+using LogService.Infrastructure.Services.Elastic.Abstractions;
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;

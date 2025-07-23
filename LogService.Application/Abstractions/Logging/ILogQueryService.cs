@@ -1,8 +1,9 @@
 namespace LogService.Application.Abstractions.Logging;
 
-using LogService.Application.Common.Results;
 using LogService.Application.Features.DTOs;
-using LogService.SharedKernel.DTOs;
+using LogService.Domain.DTOs;
+
+using SharedKernel.Common.Results;
 
 public interface ILogQueryService
 {

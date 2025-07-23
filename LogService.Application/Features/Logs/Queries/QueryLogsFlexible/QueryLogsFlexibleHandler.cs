@@ -3,12 +3,14 @@ namespace LogService.Application.Features.Logs.Queries.QueryLogsFlexible;
 using System.Security.Claims;
 
 using LogService.Application.Abstractions.Logging;
-using LogService.Application.Common.Results;
 using LogService.Application.Features.DTOs;
+using LogService.Domain.Constants;
 
 using MediatR;
 
 using Microsoft.AspNetCore.Http;
+
+using SharedKernel.Common.Results;
 
 public class QueryLogsFlexibleHandler(
     ILogQueryService logQueryService,
@@ -17,24 +19,19 @@ public class QueryLogsFlexibleHandler(
 {
     public async Task<Result<FlexibleLogQueryResult>> Handle(QueryLogsFlexible request, CancellationToken cancellationToken)
     {
-        var role = httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.Role)?.Value ?? "anonymous";
-        var filterStr = System.Text.Json.JsonSerializer.Serialize(request.Filter);
+        var role = httpContextAccessor.HttpContext?.User.FindFirst(ClaimTypes.Role)?.Value ?? "Anonymous";
 
-        var result = await logQueryService.QueryLogsFlexibleAsync(
-            request.IndexName,
-            role,
-            request.Filter,
-            request.Options.FetchCount,
-            request.Options.FetchDocuments,
-            request.Options.IncludeFields
+        var indexName = string.IsNullOrWhiteSpace(request.IndexName)
+            ? LogConstants.DefaultIndexWildcard
+            : request.IndexName;
+
+        return await logQueryService.QueryLogsFlexibleAsync(
+            indexName: indexName,
+            role: role,
+            filter: request.Filter,
+            fetchCount: request.Options.FetchCount,
+            fetchDocuments: request.Options.FetchDocuments,
+            includeFields: request.Options.IncludeFields
         );
-
-        if (result.IsFailure)
-        {
-            return Result<FlexibleLogQueryResult>.Failure(result.Errors);
-        }
-
-        return Result<FlexibleLogQueryResult>.Success(result.Value);
     }
 }
-

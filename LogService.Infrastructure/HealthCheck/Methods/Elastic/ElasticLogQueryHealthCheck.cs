@@ -1,15 +1,15 @@
 namespace LogService.Infrastructure.HealthCheck.Methods.Elastic;
 using System;
-using System.Linq;
 using System.Threading.Tasks;
 
-using LogService.Application.Abstractions.Elastic;
+using LogService.Domain.DTOs;
 using LogService.Infrastructure.HealthCheck.Metadata;
-using LogService.SharedKernel.DTOs;
-using LogService.SharedKernel.Enums;
+using LogService.Infrastructure.Services.Elastic.Abstractions;
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
+
+using SharedKernel.Common.Results.Objects;
 
 [Name("elasticsearch_log_query")]
 [HealthTags("elastic", "infra", "log", "query")]
@@ -32,7 +32,7 @@ public class ElasticLogQueryHealthCheck : IHealthCheck
     {
         var filter = new LogFilterDto
         {
-            StartDate = DateTime.UtcNow.AddMinutes(-15),
+            StartDate = DateTime.UtcNow.AddDays(-2),
             EndDate = DateTime.UtcNow,
             Page = 1,
             PageSize = 1
@@ -41,7 +41,7 @@ public class ElasticLogQueryHealthCheck : IHealthCheck
         var result = await _logClient.QueryLogsFlexibleAsync(
             indexName: "logservice-logs-*",
             filter: filter,
-            allowedLevels: new() { LogSeverityCode.Information, LogSeverityCode.Warning, LogSeverityCode.Error },
+            allowedLevels: new() { ErrorLevel.Debug, ErrorLevel.Information, ErrorLevel.Warning, ErrorLevel.Error },
             fetchCount: true,
             fetchDocuments: false
         );
@@ -54,9 +54,9 @@ public class ElasticLogQueryHealthCheck : IHealthCheck
 
         if (result.Value.TotalCount == 0)
         {
-            return HealthCheckResult.Degraded("Log sorgusu başarılı ancak son 15 dakikada kayıt bulunamadı.");
+            return HealthCheckResult.Degraded("Log sorgusu başarılı ancak son 2 günde kayıt bulunamadı.");
         }
 
-        return HealthCheckResult.Healthy($"Son 15 dakikada {result.Value.TotalCount} kayıt bulundu.");
+        return HealthCheckResult.Healthy($"Son 2 günde {result.Value.TotalCount} kayıt bulundu.");
     }
 }

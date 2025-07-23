@@ -1,5 +1,4 @@
 namespace LogService.Infrastructure.HealthCheck.Extension;
-using System;
 using System.Linq;
 using System.Reflection;
 

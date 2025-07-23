@@ -1,7 +1,7 @@
 namespace LogService.Application.Features.DTOs;
 using System.Collections.Generic;
 
-using LogService.SharedKernel.DTOs;
+using LogService.Domain.DTOs;
 
 public class FlexibleLogQueryResult
 {

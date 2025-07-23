@@ -1,14 +1,12 @@
 namespace LogService.Infrastructure.HealthCheck.Methods.Logging;
-using System;
-using System.Linq;
-using System.Threading.Tasks;
 
-using LogService.Application.Abstractions.Elastic;
+using LogService.Domain.DTOs;
 using LogService.Infrastructure.HealthCheck.Metadata;
-using LogService.SharedKernel.DTOs;
-using LogService.SharedKernel.Enums;
+using LogService.Infrastructure.Services.Elastic.Abstractions;
 
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+
+using SharedKernel.Common.Results.Objects;
 
 [Name("elastic_cluster")]
 [HealthTags("elastic", "critical", "cluster")]
@@ -32,8 +30,8 @@ public class ElasticClusterHealthCheck : IHealthCheck
         HealthCheckContext context,
         CancellationToken cancellationToken = default)
     {
-        var pingOk = await _elasticHealth.IsElasticAvailableAsync(cancellationToken);
-        if (!pingOk)
+        var pingResult = await _elasticHealth.IsElasticAvailableAsync(cancellationToken);
+        if (pingResult.IsFailure || !pingResult.Value)
             return HealthCheckResult.Unhealthy("Elasticsearch ping başarısız");
 
         var indices = await _indexService.GetIndexNamesAsync(cancellationToken);
@@ -51,7 +49,7 @@ public class ElasticClusterHealthCheck : IHealthCheck
         var result = await _logClient.QueryLogsFlexibleAsync(
             indexName: indices[0],
             filter: dummyFilter,
-            allowedLevels: [LogSeverityCode.Information],
+            allowedLevels: [ErrorLevel.Information],
             fetchDocuments: false,
             fetchCount: false,
             includeFields: []
